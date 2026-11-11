@@ -111,30 +111,8 @@ function el(tag, cls, text) {
 }
 let channels = store.get('mytube.channels', []);
 
-/* ============================================================
-   المصادر: Piped (أساسي) + Invidious (بديل) — كلاهما بدون إعلانات
-   ============================================================ */
-const PIPED = [
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.adminforge.de',
-  'https://api.piped.private.coffee',
-  'https://pipedapi.leptons.xyz',
-  'https://pipedapi.drgns.space',
-  'https://pipedapi.ducks.party',
-  'https://pipedapi.nosebs.ru',
-  'https://piped-api.lunar.icu',
-  'https://pipedapi.reallyaweso.me'
-];
-
-const INVIDIOUS = [
-  'https://inv.nadeko.net',
-  'https://yewtu.be',
-  'https://invidious.nerdvpn.de',
-  'https://iv.melmac.space',
-  'https://invidious.f5.si',
-  'https://inv.us.projectsegfau.lt',
-  'https://invidious.privacydev.net'
-];
+const PIPED = ['https://pipedapi.kavin.rocks','https://pipedapi.adminforge.de','https://api.piped.private.coffee','https://pipedapi.leptons.xyz','https://pipedapi.drgns.space','https://piped-api.lunar.icu'];
+const INVIDIOUS = ['https://inv.nadeko.net','https://yewtu.be','https://invidious.nerdvpn.de','https://iv.melmac.space','https://invidious.f5.si','https://inv.us.projectsegfau.lt'];
 
 let pipedGood = null;
 let invGood = null;
@@ -148,7 +126,7 @@ function fetchT(url, ms) {
 async function piped(path) {
   const order = pipedGood ? [pipedGood, ...PIPED.filter(p => p !== pipedGood)] : PIPED.slice();
   let lastErr;
-  for (const base of order.slice(0, 6)) {
+  for (const base of order.slice(0, 4)) {
     try {
       const r = await fetchT(base + path, 7000);
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -164,7 +142,7 @@ async function piped(path) {
 async function inv(path) {
   const order = invGood ? [invGood, ...INVIDIOUS.filter(p => p !== invGood)] : INVIDIOUS.slice();
   let lastErr;
-  for (const base of order.slice(0, 5)) {
+  for (const base of order.slice(0, 4)) {
     try {
       const r = await fetchT(base + path, 7000);
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -176,73 +154,73 @@ async function inv(path) {
   throw lastErr || new Error('Invidious غير متاح');
 }
 
-/* ============================================================
-   القناة: بيانات + فيديوهات (بصيغة موحّدة)
-   ============================================================ */
-async function getChannel(id) {
+// جلب فيديوهات القناة بثلاث طرق (Piped -> Invidious -> RSS)
+async function getChannel(ch) {
+  const id = ch.id;
+
   // 1) Piped
   try {
     const c = await piped('/channel/' + id);
     const list = (c.relatedStreams || c.items || c.videos || []);
-    const vids = list
-      .filter(v => !v.isShort && typeof v.url === 'string' && v.url.includes('v='))
-      .map(v => {
+    if (list.length) {
+      const vids = list.filter(v => !v.isShort && typeof v.url === 'string' && v.url.includes('v=')).map(v => {
         const vid = v.url.split('v=')[1].split('&')[0];
-        return {
-          id: vid,
-          title: v.title,
-          thumb: v.thumbnail,
-          dur: v.duration,
-          t: v.uploaded,
-          by: c.name || id,
-          av: c.avatarUrl || ''
-        };
+        return { id: vid, title: v.title, thumb: v.thumbnail, dur: v.duration, t: v.uploaded, by: c.name || ch.name, av: c.avatarUrl || ch.avatar };
       });
-    return { name: c.name || id, avatar: c.avatarUrl || '', videos: vids };
-  } catch (e) { /* ننتقل للبديل */ }
+      if (vids.length) return { name: c.name || ch.name, avatar: c.avatarUrl || ch.avatar, videos: vids };
+    }
+  } catch (e) { }
 
   // 2) Invidious
-  const { base, data: c } = await inv('/api/v1/channels/' + id);
-  const thumbs = c.authorThumbnails || [];
-  let avatar = (thumbs[thumbs.length - 1] || {}).url || '';
-  if (avatar.startsWith('/')) avatar = base + avatar;
-
-  let videos = [];
-  // latestVideos قد لا تحتوي على طابع زمني رقمي؛ نستخدمه فقط إن وجد
-  if (Array.isArray(c.latestVideos) && c.latestVideos.length) {
-    videos = c.latestVideos.map(v => ({
-      id: v.videoId,
-      title: v.title,
-      thumb: (v.videoThumbnails || []).find(t => t.quality === 'medium')?.url
-           || (v.videoThumbnails && v.videoThumbnails[0] && v.videoThumbnails[0].url) || '',
-      dur: v.lengthSeconds,
-      t: null,
-      by: c.author || id,
-      av: avatar
-    }));
-  } else {
-    // endpoint بديل للفيديوهات
-    try {
+  try {
+    const { base, data: c } = await inv('/api/v1/channels/' + id);
+    let avatar = (c.authorThumbnails || []).pop()?.url || ch.avatar;
+    if (avatar.startsWith('/')) avatar = base + avatar;
+    let videos = [];
+    if (Array.isArray(c.latestVideos) && c.latestVideos.length) {
+      videos = c.latestVideos.map(v => ({
+        id: v.videoId, title: v.title,
+        thumb: (v.videoThumbnails || []).find(t => t.quality === 'medium')?.url || (v.videoThumbnails && v.videoThumbnails[0]?.url) || '',
+        dur: v.lengthSeconds, t: null, by: c.author || ch.name, av: avatar
+      }));
+    } else {
       const { data: vv } = await inv('/api/v1/channels/' + id + '/videos');
       const arr = (vv && vv.videos) || [];
       videos = arr.map(v => ({
-        id: v.videoId,
-        title: v.title,
-        thumb: (v.videoThumbnails || []).find(t => t.quality === 'medium')?.url
-             || (v.videoThumbnails && v.videoThumbnails[0] && v.videoThumbnails[0].url) || '',
-        dur: v.lengthSeconds,
-        t: (v.published || 0) * 1000 || null,
-        by: c.author || id,
-        av: avatar
+        id: v.videoId, title: v.title,
+        thumb: (v.videoThumbnails || []).find(t => t.quality === 'medium')?.url || (v.videoThumbnails && v.videoThumbnails[0]?.url) || '',
+        dur: v.lengthSeconds, t: (v.published || 0) * 1000 || null, by: c.author || ch.name, av: avatar
       }));
-    } catch (e2) {}
-  }
-  return { name: c.author || id, avatar, videos };
+    }
+    if (videos.length) return { name: c.author || ch.name, avatar, videos };
+  } catch (e) { }
+
+  // 3) RSS (الطريقة الاحتياطية المضمونة جداً)
+  try {
+    const rssUrl = 'https://www.youtube.com/feeds/videos.xml?channel_id=' + id;
+    const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(rssUrl);
+    const r = await fetchT(proxy, 8000);
+    const text = await r.text();
+    const xml = new DOMParser().parseFromString(text, 'text/xml');
+    const entries = Array.from(xml.querySelectorAll('entry'));
+    if (entries.length) {
+      const videos = entries.map(e => {
+        const vid = e.getElementsByTagName('yt:videoId')[0]?.textContent;
+        const title = e.getElementsByTagName('title')[0]?.textContent;
+        const pub = e.getElementsByTagName('published')[0]?.textContent;
+        const thumb = e.getElementsByTagName('media:thumbnail')[0]?.getAttribute('url');
+        return {
+          id: vid, title: title, thumb: thumb, dur: 0, // RSS لا يوفر مدة الفيديو
+          t: new Date(pub).getTime(), by: ch.name, av: ch.avatar
+        };
+      });
+      return { name: ch.name, avatar: ch.avatar, videos: videos };
+    }
+  } catch (e) { }
+
+  throw new Error('لا يوجد فيديوهات');
 }
 
-/* ============================================================
-   البحث عن قناة (لإضافة جديدة)
-   ============================================================ */
 async function resolveChannel(input) {
   input = input.trim();
   const m = input.match(/UC[\w-]{22}/);
@@ -251,36 +229,38 @@ async function resolveChannel(input) {
   if (!id) {
     const h = input.match(/@([\w.\-]+)/);
     const q = h ? h[1] : input;
-
-    // Piped search
     try {
       const res = await piped('/search?q=' + encodeURIComponent(q) + '&filter=channels');
       const first = (res.items || []).find(i => i.url && i.url.indexOf('/channel/') !== -1);
       if (first) id = first.url.split('/channel/')[1];
     } catch (e) {}
-
-    // Invidious search
     if (!id) {
-      const { data: res } = await inv('/api/v1/search?q=' + encodeURIComponent(q) + '&type=channel');
-      const first = (res || [])[0];
-      if (first && first.authorId) id = first.authorId;
+      try {
+        const { data: res } = await inv('/api/v1/search?q=' + encodeURIComponent(q) + '&type=channel');
+        const first = (res || [])[0];
+        if (first && first.authorId) id = first.authorId;
+      } catch (e) {}
     }
   }
 
   if (!id) throw new Error('ما لقيت القناة');
-
-  // نجيب الاسم والصورة
+  
+  // نجيب البيانات الأساسية فقط
   try {
-    const c = await getChannel(id);
-    return { id, name: c.name || id, avatar: c.avatar || '' };
+    const c = await piped('/channel/' + id);
+    return { id, name: c.name || id, avatar: c.avatarUrl || '' };
   } catch (e) {
-    return { id, name: id, avatar: '' };
+    try {
+      const { base, data: c } = await inv('/api/v1/channels/' + id);
+      let avatar = (c.authorThumbnails || []).pop()?.url || '';
+      if (avatar.startsWith('/')) avatar = base + avatar;
+      return { id, name: c.author || id, avatar: avatar };
+    } catch (e2) {
+      return { id, name: 'قناة ' + id.slice(0, 5), avatar: '' }; 
+    }
   }
 }
 
-/* ============================================================
-   أدوات مساعدة
-   ============================================================ */
 function ago(ms) {
   if (!ms || ms < 0) return '';
   const m = Math.floor((Date.now() - ms) / 60000);
@@ -312,9 +292,6 @@ async function pool(items, n, fn) {
   return out;
 }
 
-/* ============================================================
-   الفيد
-   ============================================================ */
 async function loadFeed() {
   const box = $('#feed');
   const statusEl = $('#status');
@@ -328,23 +305,23 @@ async function loadFeed() {
   }
   statusEl.textContent = 'جاري تحميل الفيديوهات…';
 
-  const res = await pool(channels, 2, c => getChannel(c.id));
+  const res = await pool(channels, 2, c => getChannel(c));
   let vids = [], fail = 0;
+  
   res.forEach((r, i) => {
     if (!r.ok) { fail++; return; }
     r.v.videos.forEach(v => vids.push(v));
   });
+  
   vids.sort((a, b) => (b.t || 0) - (a.t || 0));
   vids = vids.slice(0, 100);
 
   if (!vids.length) {
     statusEl.classList.add('err');
-    statusEl.textContent = (fail === channels.length)
-      ? 'فشل تحميل كل القنوات — كل سيرفرات Piped وInvidious لا تستجيب حالياً. جرّب بعد قليل أو اضغط تحديث.'
-      : 'ما فيه فيديوهات ظاهرة لهذه القنوات.';
+    statusEl.textContent = 'فشل تحميل الفيديوهات. تأكد من إضافة القناة بشكل صحيح واضغط تحديث.';
     return;
   }
-  statusEl.textContent = vids.length + ' فيديو' + (fail ? ' — فشلت ' + fail + ' قناة (اضغط تحديث)' : '');
+  statusEl.textContent = vids.length + ' فيديو' + (fail ? ' — فشلت ' + fail + ' قناة' : '');
 
   vids.forEach(v => {
     const card = el('div', 'card');
@@ -366,11 +343,7 @@ async function loadFeed() {
   });
 }
 
-/* ============================================================
-   المشغل — بدون إعلانات (Piped proxy ثم Invidious local)
-   ============================================================ */
 async function getStream(id) {
-  // 1) Piped: نفضل proxyUrl دائماً
   try {
     const d = await piped('/streams/' + id);
     const all = (d.videoStreams || []).filter(s => !s.videoOnly);
@@ -379,15 +352,10 @@ async function getStream(id) {
     if (pool2.length) {
       pool2.sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0));
       const best = pool2[0];
-      return {
-        src: best.proxyUrl || best.url,
-        quality: best.quality || 'auto',
-        via: 'Piped'
-      };
+      return { src: best.proxyUrl || best.url, quality: best.quality || 'auto', via: 'Piped' };
     }
   } catch (e) {}
 
-  // 2) Invidious: local=true → يمر البث عبر سيرفر Invidious (بدون إعلانات)
   const { base, data: d } = await inv('/api/v1/videos/' + id + '?local=true');
   const fs = (d.formatStreams || []).filter(s => s.url);
   if (fs.length) {
@@ -410,10 +378,10 @@ async function play(v) {
     const s = await getStream(v.id);
     vid.src = s.src;
     vid.addEventListener('error', () => {
-      $('#perr').textContent = 'تعذر التشغيل المباشر — جرّب تحديث الصفحة، أو الفيديو قد يمنع التضمين.';
+      $('#perr').textContent = 'تعذر التشغيل المباشر — الفيديو قد يمنع التضمين أو السيرفر مشغول.';
     }, { once: true });
     try { await vid.play(); } catch (e) {}
-    $('#perr').textContent = 'الجودة: ' + s.quality + ' — المصدر: ' + s.via + ' (بدون إعلانات)';
+    $('#perr').textContent = 'الجودة: ' + s.quality + ' — المصدر: ' + s.via;
   } catch (e) {
     $('#perr').textContent = 'فشل التشغيل: ' + (e.message || e);
   }
@@ -427,9 +395,6 @@ function closePlayer() {
   $('#player').hidden = true;
 }
 
-/* ============================================================
-   القنوات (إضافة/حذف/عرض)
-   ============================================================ */
 function setMsg(t, isErr) {
   const m = $('#msg');
   m.textContent = t;
@@ -476,13 +441,10 @@ async function addChannel() {
     renderChannels();
     loadFeed();
   } catch (e) {
-    setMsg('فشلت الإضافة: ' + (e.message || e) + ' — جرّب تلصق رابط القناة أو UC... مباشرة.', true);
+    setMsg('فشلت الإضافة: ' + (e.message || e), true);
   }
 }
 
-/* ============================================================
-   ربط الأزرار
-   ============================================================ */
 $('#open').onclick = () => { $('#sheet').hidden = false; renderChannels(); };
 $('#close').onclick = () => { $('#sheet').hidden = true; };
 $('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet').hidden = true; };
