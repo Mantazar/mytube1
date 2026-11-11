@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+<title>MyTube</title>
+<style>
+:root{--bg:#fff;--tx:#0f0f0f;--mu:#606060;--line:#e6e6e6;--chip:#f1f1f1;--ac:#1a6ef0;--onac:#fff;--bad:#d93025;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121212;--tx:#f1f1f1;--mu:#9a9a9a;--line:#2b2b2b;--chip:#242424;--ac:#6aa9ff;--onac:#0b1b33;--bad:#ff8a80}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Arabic",sans-serif;font-size:15px;-webkit-tap-highlight-color:transparent}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+button,input{font:inherit;color:inherit}
+
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;height:52px;padding:0 6px 0 6px;background:var(--bg)}
+h1{margin:0 10px;font-size:19px;font-weight:700;flex:1}
+.ib{width:42px;height:42px;display:grid;place-items:center;border:0;background:transparent;border-radius:50%;cursor:pointer}
+.ib:active{background:var(--chip)}
+.ib svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+#status{padding:2px 14px 8px;color:var(--mu);font-size:13px;min-height:24px}
+
+.grid{display:grid;grid-template-columns:1fr;gap:22px;padding:0 0 24px}
+@media (min-width:700px){.grid{grid-template-columns:repeat(2,1fr);gap:24px 14px;padding:0 14px 24px}}
+@media (min-width:1000px){.grid{grid-template-columns:repeat(3,1fr)}}
+.card{cursor:pointer}
+.thumb{position:relative;aspect-ratio:16/9;background:var(--chip)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+@media (min-width:700px){.thumb{border-radius:12px;overflow:hidden}}
+.dur{position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.8);color:#fff;padding:1px 5px;border-radius:4px;font-size:12px;font-weight:600}
+.meta{display:flex;gap:10px;padding:10px 12px 0}
+.av{width:36px;height:36px;border-radius:50%;object-fit:cover;background:var(--chip);flex:none}
+.txt{min-width:0}
+.t{font-weight:600;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.s{color:var(--mu);font-size:12.5px;margin-top:3px}
+.empty{grid-column:1/-1;text-align:center;color:var(--mu);padding:56px 24px;line-height:1.9;white-space:pre-line}
+
+.sheet{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.45);display:flex;align-items:flex-end}
+.panel{width:100%;max-height:85vh;overflow:auto;background:var(--bg);border-radius:16px 16px 0 0;padding:8px 16px calc(16px + env(safe-area-inset-bottom))}
+.ph{display:flex;align-items:center;margin-bottom:8px}
+.ph h2{margin:0;font-size:17px;flex:1}
+.row{display:flex;gap:8px}
+input{flex:1;min-width:0;background:var(--chip);border:0;border-radius:10px;padding:12px;outline:none}
+input:focus{box-shadow:0 0 0 2px var(--ac)}
+.pbtn{border:0;background:var(--ac);color:var(--onac);font-weight:600;padding:0 18px;border-radius:10px;cursor:pointer}
+#msg{min-height:22px;margin:8px 0;font-size:13.5px;color:var(--mu)}
+.ch{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.ch .av{width:34px;height:34px}
+.ch span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.del{background:transparent;color:var(--bad);border:0;padding:6px 4px;cursor:pointer}
+
+#player{position:fixed;inset:0;z-index:20;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+#pbar{display:flex;align-items:center;height:52px;padding:0 6px}
+#vid{width:100%;max-height:56vh;background:#000}
+#pinfo{padding:12px 14px;overflow:auto}
+#ptitle{font-weight:600;line-height:1.5;font-size:16px}
+#perr{color:var(--mu);font-size:13px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>MyTube</h1>
+  <button class="ib" id="refresh" aria-label="تحديث" title="تحديث">
+    <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+  </button>
+  <button class="ib" id="open" aria-label="القنوات" title="القنوات">
+    <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+  </button>
+</header>
+<div id="status"></div>
+<main id="feed" class="grid"></main>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="panel">
+    <div class="ph">
+      <h2>القنوات</h2>
+      <button class="ib" id="close" aria-label="إغلاق" title="إغلاق">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="row">
+      <input id="in" placeholder="الصق رابط القناة أو @اسمها" inputmode="url" autocomplete="off">
+      <button class="pbtn" id="addbtn">إضافة</button>
+    </div>
+    <div id="msg"></div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<div id="player" hidden>
+  <div id="pbar">
+    <button class="ib" id="pclose" aria-label="إغلاق المشغل" title="إغلاق">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <video id="vid" controls playsinline></video>
+  <div id="pinfo"><div id="ptitle"></div><div id="perr"></div></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+let channels = store.get('mytube.channels', []);
+
+/* ---------- طبقة الاستخراج (Piped): منفصلة عن الواجهة ---------- */
+const FALLBACK = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.adminforge.de',
+  'https://api.piped.private.coffee',
+  'https://pipedapi.leptons.xyz'
+];
+let instances = FALLBACK.slice();
+let good = null;
+
+function fetchT(url, ms) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms || 8000);
+  return fetch(url, { signal: c.signal }).finally(() => clearTimeout(t));
+}
+
+async function loadInstances() {
+  try {
+    const r = await fetchT('https://piped-instances.kavin.rocks/', 6000);
+    const list = await r.json();
+    const urls = list.filter(i => i.api_url)
+      .sort((a, b) => (b.uptime_24h || 0) - (a.uptime_24h || 0))
+      .map(i => i.api_url.replace(/\/$/, ''));
+    instances = Array.from(new Set(urls.slice(0, 6).concat(FALLBACK)));
+  } catch (e) { /* نكمل بالقائمة الاحتياطية */ }
+}
+
+async function api(path) {
+  const order = (good ? [good].concat(instances.filter(i => i !== good)) : instances).slice(0, 6);
+  let err;
+  for (const base of order) {
+    try {
+      const r = await fetchT(base + path, 8000);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      if (j && j.error) throw new Error(j.error);
+      good = base;
+      return j;
+    } catch (e) { err = e; }
+  }
+  throw err || new Error('ما اشتغل أي سيرفر');
+}
+
+async function resolveChannel(input) {
+  input = input.trim();
+  const m = input.match(/UC[\w-]{22}/);
+  let id = m && m[0];
+  if (!id) {
+    const h = input.match(/@([\w.\-]+)/);
+    const q = h ? h[1] : input;
+    const res = await api('/search?q=' + encodeURIComponent(q) + '&filter=channels');
+    const first = (res.items || []).find(i => i.url && i.url.indexOf('/channel/') !== -1);
+    if (!first) throw new Error('ما لقيت القناة');
+    id = first.url.split('/channel/')[1];
+  }
+  const ch = await api('/channel/' + id);
+  return { id: id, name: ch.name || id, avatar: ch.avatarUrl || '' };
+}
+
+/* ---------- أدوات ---------- */
+function ago(ms) {
+  if (!ms || ms < 0) return '';
+  const m = Math.floor((Date.now() - ms) / 60000);
+  if (m < 60) return 'قبل ' + Math.max(m, 1) + ' دقيقة';
+  const h = Math.floor(m / 60);
+  if (h < 24) return 'قبل ' + h + ' ساعة';
+  const d = Math.floor(h / 24);
+  if (d < 30) return 'قبل ' + d + ' يوم';
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return 'قبل ' + mo + ' شهر';
+  return 'قبل ' + Math.floor(mo / 12) + ' سنة';
+}
+function fmt(s) {
+  if (!s || s < 0) return '';
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  const p = n => String(n).padStart(2, '0');
+  return h ? h + ':' + p(m) + ':' + p(x) : m + ':' + p(x);
+}
+async function pool(items, n, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: n }, async () => {
+    while (i < items.length) {
+      const k = i++;
+      try { out[k] = { ok: true, v: await fn(items[k]) }; } catch (e) { out[k] = { ok: false }; }
+    }
+  }));
+  return out;
+}
+
+/* ---------- الفيد ---------- */
+async function loadFeed() {
+  const box = $('#feed');
+  box.textContent = '';
+  if (!channels.length) {
+    box.appendChild(el('div', 'empty', 'ما عندك قنوات بعد.\nاضغط أيقونة القوائم فوق والصق رابط أي قناة مشترك بيها.'));
+    $('#status').textContent = '';
+    return;
+  }
+  $('#status').textContent = 'جاري تحميل الفيديوهات…';
+  const res = await pool(channels, 4, c => api('/channel/' + c.id));
+  let vids = [], fail = 0;
+  res.forEach((r, i) => {
+    if (!r.ok) { fail++; return; }
+    (r.v.relatedStreams || []).forEach(v => {
+      if (v.isShort || !v.url) return;
+      const id = v.url.split('v=')[1];
+      if (!id) return;
+      vids.push({ id: id, title: v.title, thumb: v.thumbnail, dur: v.duration, t: v.uploaded, by: v.uploaderName || channels[i].name, av: channels[i].avatar });
+    });
+  });
+  vids.sort((a, b) => (b.t || 0) - (a.t || 0));
+  vids = vids.slice(0, 80);
+  $('#status').textContent = vids.length + ' فيديو' + (fail ? ' — فشلت ' + fail + ' قناة (اضغط تحديث)' : '');
+  vids.forEach(v => {
+    const card = el('div', 'card');
+    const th = el('div', 'thumb');
+    const img = el('img');
+    img.loading = 'lazy';
+    img.alt = '';
+    img.src = v.thumb || '';
+    th.appendChild(img);
+    if (v.dur > 0) th.appendChild(el('div', 'dur', fmt(v.dur)));
+    const meta = el('div', 'meta');
+    const av = el('img', 'av');
+    av.alt = '';
+    av.src = v.av || '';
+    const txt = el('div', 'txt');
+    txt.appendChild(el('div', 't', v.title));
+    txt.appendChild(el('div', 's', v.by + (v.t > 0 ? ' · ' + ago(v.t) : '')));
+    meta.appendChild(av);
+    meta.appendChild(txt);
+    card.appendChild(th);
+    card.appendChild(meta);
+    card.onclick = () => play(v);
+    box.appendChild(card);
+  });
+}
+
+/* ---------- المشغل ---------- */
+async function play(v) {
+  $('#player').hidden = false;
+  $('#ptitle').textContent = v.title;
+  const vid = $('#vid');
+  vid.removeAttribute('src');
+  $('#perr').textContent = 'جاري التحميل…';
+  try {
+    const d = await api('/streams/' + v.id);
+    const list = (d.videoStreams || []).filter(s => !s.videoOnly && s.url);
+    list.sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0));
+    if (!list.length) throw new Error('ما فيه بث جاهز بصوت وصورة لهذا الفيديو (نعالجها بالمرحلة 2)');
+    vid.src = list[0].url;
+    await vid.play().catch(() => {});
+    $('#perr').textContent = 'الجودة: ' + list[0].quality;
+  } catch (e) {
+    $('#perr').textContent = 'فشل التشغيل: ' + e.message;
+  }
+}
+function closePlayer() {
+  const vid = $('#vid');
+  vid.pause();
+  vid.removeAttribute('src');
+  vid.load();
+  $('#player').hidden = true;
+}
+
+/* ---------- القنوات ---------- */
+function setMsg(t) { $('#msg').textContent = t; }
+
+function renderChannels() {
+  const box = $('#list');
+  box.textContent = '';
+  channels.forEach(c => {
+    const row = el('div', 'ch');
+    const img = el('img', 'av');
+    img.alt = '';
+    img.src = c.avatar || '';
+    const name = el('span', '', c.name);
+    const del = el('button', 'del', 'حذف');
+    del.onclick = () => {
+      channels = channels.filter(x => x.id !== c.id);
+      store.set('mytube.channels', channels);
+      renderChannels();
+      loadFeed();
+    };
+    row.appendChild(img);
+    row.appendChild(name);
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+async function addChannel() {
+  const v = $('#in').value;
+  if (!v.trim()) return;
+  setMsg('جاري البحث…');
+  try {
+    const ch = await resolveChannel(v);
+    if (channels.some(c => c.id === ch.id)) { setMsg('هذي القناة مضافة من قبل: ' + ch.name); return; }
+    channels.push(ch);
+    store.set('mytube.channels', channels);
+    $('#in').value = '';
+    setMsg('تمت إضافة: ' + ch.name);
+    renderChannels();
+    loadFeed();
+  } catch (e) {
+    setMsg('فشلت الإضافة: ' + e.message + ' — جرّب تلصق رابط القناة نفسه.');
+  }
+}
+
+/* ---------- ربط الأزرار ---------- */
+$('#open').onclick = () => { $('#sheet').hidden = false; renderChannels(); };
+$('#close').onclick = () => { $('#sheet').hidden = true; };
+$('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet').hidden = true; };
+$('#addbtn').onclick = addChannel;
+$('#in').addEventListener('keydown', e => { if (e.key === 'Enter') addChannel(); });
+$('#refresh').onclick = loadFeed;
+$('#pclose').onclick = closePlayer;
+
+loadInstances().then(loadFeed);
+</script>
+</body>
+</html>
